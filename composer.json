@@ -1,0 +1,8 @@
+{
+    "require": {
+        "fabpot/goutte": "^4.0",
+        "symfony/browser-kit": "^6.4",
+        "symfony/css-selector": "^6.4",
+        "smalot/pdfparser": "^2.11"
+    }
+}
