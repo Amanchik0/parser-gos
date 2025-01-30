@@ -165,52 +165,97 @@ function protocolTab($detail_link, $lotNumber)
             $lines = explode("\n", trim($text));
             $startExtracting = false;
             $data = [];
+            $supplierCount = 0;
+            $fullLine = "";
+            $supplierIndex = 0;
+
+            // Удаляем строки с номерами страниц и заголовками
+            $lines = array_filter($lines, function ($line) {
+                return !preg_match('/^\d+\s*\/\s*\d+$|№Наименование поставщика|Дата и время подачи заявки/u', trim($line));
+            });
+
+            // Ищем количество поставщиков
+            foreach ($lines as $line) {
+                if (strpos($line, "Потенциальными поставщиками представлены следующие ценовые предложения:") !== false) {
+                    if (preg_match('/\d+/', $line, $matches)) {
+                        $supplierCount = (int)$matches[0];
+                        echo "Количество поставщиков: $supplierCount\n";
+                    }
+                    break;
+                }
+            }
 
             foreach ($lines as $line) {
                 $line = trim($line);
 
-                // Начинаем извлекать данные после заголовка таблицы
+                // Начинаем обработку после заголовка таблицы
                 if (strpos($line, "Потенциальными поставщиками представлены следующие ценовые предложения") !== false) {
                     $startExtracting = true;
                     continue;
                 }
 
-                if ($startExtracting && preg_match('/^(\d+)\s*"?(.*?)"?\s+(\d{12})\s+([\d\s]+)\s+([\d\s]+)\s+([\d\s]+)\s+([\d\-]+\s+[\d:.]+)$/u', $line, $matches)) {
-                    $data[] = [
-                        'number' => trim($matches[1]),
-                        'supplier_name' => trim($matches[2], '"'),
-                        'bin' => trim($matches[3]),
-                        'unit_price' => trim(str_replace(' ', '', $matches[4])),
-                        'law_price' => trim(str_replace(' ', '', $matches[5])),
-                        'total_price' => trim(str_replace(' ', '', $matches[6])),
-                        'submission_date' => trim($matches[7]),
-                    ];
+                if (!$startExtracting) {
+                    continue;
+                }
+
+                // Если строка начинается с цифры (номер поставщика), это начало новой записи
+                if (preg_match('/^\d+\s/', $line)) {
+                    if (!empty($fullLine)) {
+                        processSupplierLine($fullLine, $data, $supplierIndex, $supplierCount);
+                        $supplierIndex++;
+                    }
+                    $fullLine = $line;
+                } else {
+                    // Объединяем разорванные строки
+                    $fullLine .= " " . $line;
                 }
             }
 
-            if (empty($data)) {
-                echo "Поставщики не найдены в PDF.\n";
-            } else {
-                saveToCSV($data, 'suppliers.csv');
+            // Обрабатываем последнюю накопленную строку
+            if (!empty($fullLine)) {
+                processSupplierLine($fullLine, $data, $supplierIndex, $supplierCount);
             }
+
+            print_r($data); // Для отладки
+            saveToCSV($data, 'suppliers.csv');
 
         } catch (Exception $e) {
             echo "Ошибка: " . $e->getMessage() . "\n";
         }
 
-        unlink($pdfPath); // Удаляем временный файл
+        unlink($pdfPath);
     }
 
     return $results;
 }
 
-function saveToCSV($data, $filename = 'lots.csv')
+// Функция обработки строки с данными поставщика
+function processSupplierLine($line, &$data, $supplierIndex, $supplierCount)
+{
+    // Try adjusting regex to handle variations in whitespace and structure
+    if (preg_match('/^(\d+)\s+"?(.*?)"?\s+(\d{12})\s+([\d\s]+)\s+([\d\s]+)\s+([\d\s]+)\s+([\d\-]+\s+[\d:.]+)$/u', $line, $matches)) {
+        $data[] = [
+            'number' => trim($matches[1]),
+            'supplier_name' => trim($matches[2], '"'),
+            'bin' => trim($matches[3]),
+            'unit_price' => trim(str_replace(' ', '', $matches[4])),
+            'law_price' => trim(str_replace(' ', '', $matches[5])),
+            'total_price' => trim(str_replace(' ', '', $matches[6])),
+            'submission_date' => trim($matches[7]),
+            'supplier_count' => $supplierCount,
+        ];
+    } else {
+        echo "Ошибка парсинга строки: $line\n"; // More detailed error
+    }
+}
+function saveToCSV($data, $filename = 'suppliers.csv')
 {
     if (empty($data)) {
         echo "Нет данных для сохранения.\n";
         return;
     }
 
+    // Открываем файл в режиме записи (перезаписываем файл)
     $file = fopen($filename, 'w');
     if (!$file) {
         echo "Ошибка при создании CSV файла.\n";
@@ -228,6 +273,8 @@ function saveToCSV($data, $filename = 'lots.csv')
     fclose($file);
     echo "Данные поставщиков сохранены в $filename\n";
 }
+
+
 $lotNumbers= ["72064302-ЗЦП1"];
 foreach ($lotNumbers  as $lotNumber) {
     FindLot($lotNumber);
