@@ -7,7 +7,7 @@ use Symfony\Component\HttpClient\HttpClient;
 use Symfony\Component\DomCrawler\Crawler;
 use Smalot\PdfParser\Parser;
 
-function winnerTab($detail_link , $lotNumber)
+function winnerTab($detail_link, $lotNumber)
 {
     $client = HttpClient::create();
     $browser = new HttpBrowser($client);
@@ -15,14 +15,11 @@ function winnerTab($detail_link , $lotNumber)
     echo $detail_link;
     $detailsCrawler = $browser->request('GET', "$detail_link?tab=lots");
 
-        $rows = $detailsCrawler->filter(' .table-bordered tr ');
+    $rows = $detailsCrawler->filter(' .table-bordered tr ');
     if ($rows->count() === 0) {
         echo 'not found ';
         return [];
-
     }
-
-//    echo $detailsCrawler->html();
 
     $dataWinners = [];
 
@@ -43,7 +40,7 @@ function winnerTab($detail_link , $lotNumber)
     echo "Start Date: $lotStartDate\n";
     echo "End Date: $lotEndDate\n";
 
-    $rows->each(function(Crawler $row, $index) use ($endDate, $startDate, &$dataWinners) {
+    $rows->each(function (Crawler $row, $index) use ($endDate, $startDate, &$dataWinners) {
         if ($index === 0) {
             return;
         }
@@ -68,12 +65,12 @@ function winnerTab($detail_link , $lotNumber)
             'lot_count' => trim($lotCount),
             'lot_unit_of_measure' => trim($lotUnitOfMeasure),
             'lot_planned_at' => trim($lotPlannedAt),
-
         ];
     });
 
-    return $dataWinners ;
+    return $dataWinners;
 }
+
 function FindLot($lotNumber)
 {
     $client = HttpClient::create();
@@ -116,14 +113,30 @@ function FindLot($lotNumber)
             }
             $dataProtocol = protocolTab($detailsUrl, $lotNumber);
             saveToCSV($dataProtocol, 'winners.csv');
-
-
         }
     } else {
         echo "Лоты не найдены." . PHP_EOL;
     }
 }
 
+function processSupplierLine($line, &$data, $supplierIndex, $supplierCount)
+{
+    // Улучшенное регулярное выражение для обработки строк
+    if (preg_match('/^(\d+)\s+"?(.*?)"?\s+(\d{12})\s+([\d\s]+)\s+([\d\s]+)\s+([\d\s]+)\s+([\d\-]+\s+[\d:.]+)$/u', $line, $matches)) {
+        $data[] = [
+            'number' => trim($matches[1]),
+            'supplier_name' => trim($matches[2], '"'),
+            'bin' => trim($matches[3]),
+            'unit_price' => trim(str_replace(' ', '', $matches[4])),
+            'law_price' => trim(str_replace(' ', '', $matches[5])),
+            'total_price' => trim(str_replace(' ', '', $matches[6])),
+            'submission_date' => trim($matches[7]),
+            'supplier_count' => $supplierCount,
+        ];
+    } else {
+        echo "Ошибка парсинга строки: $line\n"; // Для отладки
+    }
+}
 
 function protocolTab($detail_link, $lotNumber)
 {
@@ -199,20 +212,35 @@ function protocolTab($detail_link, $lotNumber)
                 }
 
                 // Если строка начинается с цифры (номер поставщика), это начало новой записи
-                if (preg_match('/^\d+\s/', $line)) {
+                if (preg_match('/^\d+/', $line)) {
                     if (!empty($fullLine)) {
                         processSupplierLine($fullLine, $data, $supplierIndex, $supplierCount);
                         $supplierIndex++;
+                        if ($supplierIndex >= 2) {
+                            break; // Останавливаемся после первых двух поставщиков
+                        }
                     }
                     $fullLine = $line;
                 } else {
                     // Объединяем разорванные строки
                     $fullLine .= " " . $line;
                 }
+
+                // Если строка заканчивается датой и временем, это конец записи
+                if (preg_match('/\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{3}$/', $line)) {
+                    if (!empty($fullLine)) {
+                        processSupplierLine($fullLine, $data, $supplierIndex, $supplierCount);
+                        $supplierIndex++;
+                        if ($supplierIndex >= 2) {
+                            break; // Останавливаемся после первых двух поставщиков
+                        }
+                    }
+                    $fullLine = ""; // Сбрасываем накопленную строку
+                }
             }
 
             // Обрабатываем последнюю накопленную строку
-            if (!empty($fullLine)) {
+            if (!empty($fullLine) && $supplierIndex < 2) {
                 processSupplierLine($fullLine, $data, $supplierIndex, $supplierCount);
             }
 
@@ -229,25 +257,6 @@ function protocolTab($detail_link, $lotNumber)
     return $results;
 }
 
-// Функция обработки строки с данными поставщика
-function processSupplierLine($line, &$data, $supplierIndex, $supplierCount)
-{
-    // Try adjusting regex to handle variations in whitespace and structure
-    if (preg_match('/^(\d+)\s+"?(.*?)"?\s+(\d{12})\s+([\d\s]+)\s+([\d\s]+)\s+([\d\s]+)\s+([\d\-]+\s+[\d:.]+)$/u', $line, $matches)) {
-        $data[] = [
-            'number' => trim($matches[1]),
-            'supplier_name' => trim($matches[2], '"'),
-            'bin' => trim($matches[3]),
-            'unit_price' => trim(str_replace(' ', '', $matches[4])),
-            'law_price' => trim(str_replace(' ', '', $matches[5])),
-            'total_price' => trim(str_replace(' ', '', $matches[6])),
-            'submission_date' => trim($matches[7]),
-            'supplier_count' => $supplierCount,
-        ];
-    } else {
-        echo "Ошибка парсинга строки: $line\n"; // More detailed error
-    }
-}
 function saveToCSV($data, $filename = 'suppliers.csv')
 {
     if (empty($data)) {
@@ -255,7 +264,6 @@ function saveToCSV($data, $filename = 'suppliers.csv')
         return;
     }
 
-    // Открываем файл в режиме записи (перезаписываем файл)
     $file = fopen($filename, 'w');
     if (!$file) {
         echo "Ошибка при создании CSV файла.\n";
@@ -274,9 +282,7 @@ function saveToCSV($data, $filename = 'suppliers.csv')
     echo "Данные поставщиков сохранены в $filename\n";
 }
 
-
-$lotNumbers= ["72064302-ЗЦП1"];
-foreach ($lotNumbers  as $lotNumber) {
+$lotNumbers = ["72064302-ЗЦП1"];
+foreach ($lotNumbers as $lotNumber) {
     FindLot($lotNumber);
-
 }
