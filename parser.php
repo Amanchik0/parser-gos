@@ -226,7 +226,7 @@ function FindLot($lotNumber)
                 $combinedRows[] = $combinedData;
             }
 
-            saveToCSV($dataProtocol, 'winners.csv');
+            saveToCSV($dataProtocol, 'suppliers.csv');
         }
     } else {
         echo "Лоты не найдены.\n";
@@ -235,7 +235,7 @@ function FindLot($lotNumber)
 }
 
 
-function saveToCSV($data, $filename = 'suppliers.csv')
+function saveToCSV($data, $filename)
 {
     if (empty($data)) {
         echo "Нет данных для сохранения.\n";
