@@ -1,5 +1,4 @@
 <?php
-
 require 'vendor/autoload.php';
 
 use Symfony\Component\BrowserKit\HttpBrowser;
@@ -98,7 +97,7 @@ function protocolTab($detail_link, $lotNumber)
             file_put_contents(__DIR__ . '/debug_parsed.txt', $text);
             echo "Parsed text saved to debug_parsed.txt\n";
 
-            if (preg_match('/Әлеуетті өнім берушілер.*Ұсынды:\s*\d+\s*(.+)$/us', $text, $m)) {
+            if (preg_match('/Әлеуетті өнім берушілер.*ұсынды:\s*\d+\s*(.+)$/us', $text, $m)) {
                 $supplierBlock = $m[1];
             } else {
                 $supplierBlock = $text;
@@ -217,7 +216,7 @@ function FindLot($lotNumber)
             $debugFile = __DIR__ . '/debug_parsed.txt';
             if (file_exists($debugFile)) {
                 $debugText = file_get_contents($debugFile);
-                if (preg_match('/Әлеуетті өнім берушілер.*Ұсынды:\s*(\d+)/u', $debugText, $m)) {
+                if (preg_match('/Әлеуетті өнім берушілер.*ұсынды:\s*(\d+)/u', $debugText, $m)) {
                     $submittedBids = $m[1];
                 }
             }
